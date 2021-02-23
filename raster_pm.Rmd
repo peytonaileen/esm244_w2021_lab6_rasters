@@ -1,0 +1,151 @@
+---
+title: "Raster Lab"
+author: "Peyton Moore"
+date: "2/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(raster) ### NOTE: attaching this BEFORE tidyverse (bc of select package)
+library(tidyverse) ## This order makes tidyverse version of select take charge
+library(here)
+library(sf)
+library(fasterize)
+```
+
+### Read in Data
+
+```{r}
+knitr::include_graphics('img/landsat.png')
+```
+
+## Load and inspect the data 
+
+```{r}
+landsat_file <- here('data/Landsat7.tif')
+
+ls_1 <- raster(landsat_file)
+ls_1
+```
+
+
+```{r}
+plot(ls_1)
+```
+
+
+```{r}
+ls_2 <- raster(landsat_file, band = 2)
+ls_3 <- raster(landsat_file, band = 3)
+ls_4 <- raster(landsat_file, band = 4)
+
+ls_stack <- raster::stack(landsat_file)
+ls_stack
+
+```
+
+### Preparing the data
+
+```{r}
+
+ls_1 <- raster::aggregate(ls_1, fact = 3, fun = mean)
+ls_2 <- raster::aggregate(ls_2, fact = 3, fun = mean)
+ls_3 <- raster::aggregate(ls_3, fact = 3, fun = mean)
+ls_4 <- raster::aggregate(ls_4, fact = 3, fun = mean)
+
+plot(ls_1, col = hcl.colors(n = 100, palette = 'Blues 2'))
+
+plot(ls_2, col = hcl.colors(n = 100, palette = 'Greens 2'))
+
+plot(ls_3, col = hcl.colors(n = 100, palette = 'Reds 2'))
+
+plot(ls_4, col = hcl.colors(n = 100, palette = 'Reds 2'))
+```
+
+
+```{r}
+sbc <- raster(here('data/county.tif'))
+plot(sbc)
+
+
+ls_3 <- mask(ls_3, sbc) # why does pipiing into plot here make this null?
+ls_4 <- mask(ls_4, sbc)
+
+```
+
+# Working with raters 
+## Raster algebra 
+
+```{r}
+plot(ls_3)
+
+ls_3*2
+log(ls_3)
+
+plot(ls_3); plot(log(ls_3))
+```
+
+
+
+```{r}
+ls_3+ls_4
+```
+
+
+## `rater::calc()`
+
+```{r}
+ls_stack <- stack(ls_1, ls_2, ls_3, ls_4)
+ls_mean <- raster::calc(ls_stack, fun = mean, na.rm = FALSE)
+
+plot(ls_mean)
+```
+
+## Analysis 
+
+### NDVI 
+
+```{r}
+knitr::include_graphics('img/spectrum.png')
+
+knitr::include_graphics('img/ir_photo.jpg')
+```
+
+
+$$NDVI= \frac{NIR-Red}{NIR +Red}$$
+```{r}
+ndvi <- (ls_4 -ls_3)/ (ls_4 + ls_3)
+
+plot(ndvi, col= hcl.colors(100, 'Grays'))
+
+is_forest <- function(x, thresh = 0.3){
+  y <- ifelse(x >= thresh, 1, NA)
+  return(y)
+}
+
+forest <- calc(ndvi, fun = is_forest)
+
+plot(forest, col = 'green')
+```
+
+## `ggplot` and rasters 
+
+```{r}
+ndvi_df <- raster::rasterToPoints(ndvi) %>% 
+  as.data.frame()
+
+forest_df <- raster::rasterToPoints(forest) %>% 
+  as.data.frame()
+
+
+ggplot(data = ndvi_df, aes(x = x, y = y, fill = layer))+
+  geom_raster()+
+  geom_raster(data = forest_df, fill = 'green')+
+  coord_sf(expand = 0)+
+  scale_fill_gradient(low = 'black', high = 'white')+
+  theme_void()+
+  theme(panel.background = element_rect(fill = 'slateblue4'))
+```
+
